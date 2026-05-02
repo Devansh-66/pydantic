@@ -106,6 +106,14 @@ def _private_setattr_handler(model: BaseModel, name: str, val: Any) -> None:
         object.__setattr__(model, '__pydantic_private__', {})
     model.__pydantic_private__[name] = val  # pyright: ignore[reportOptionalSubscript]
 
+def _safe_deepcopy(value):
+    if isinstance(value, BaseModel):
+        return value.model_copy(deep=True)
+    elif isinstance(value, (list, dict, set)):
+        return deepcopy(value)
+    elif isinstance(value, tuple):
+        return tuple(_safe_deepcopy(v) for v in value)
+    return value
 
 _SIMPLE_SETATTR_HANDLERS: Mapping[str, Callable[[BaseModel, str, Any], None]] = {
     'model_field': _model_field_setattr_handler,
@@ -369,11 +377,16 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
                     fields_values[name] = values.pop(name)
                     fields_set.add(name)
                 elif not field.is_required():
-                    fields_values[name] = field.get_default(call_default_factory=True, validated_data=fields_values)
+                    default_value = field.get_default(
+                            call_default_factory=True, 
+                            validated_data=fields_values
+                    )
+                    fields_values[name] = _safe_deepcopy(default_value)
         if _fields_set is None:
             _fields_set = fields_set
 
-        _extra: dict[str, Any] | None = values if cls.model_config.get('extra') == 'allow' else None
+        extra_behavior = getattr(cls, 'model_config', {}).get('extra', 'ignore')
+        _extra: dict[str, Any] | None = values if extra_behavior == 'allow' else None
         _object_setattr(m, '__dict__', fields_values)
         _object_setattr(m, '__pydantic_fields_set__', _fields_set)
         if not cls.__pydantic_root_model__:
