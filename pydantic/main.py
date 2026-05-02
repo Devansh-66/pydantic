@@ -422,7 +422,15 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
         Returns:
             New model instance.
         """
-        copied = self.__deepcopy__() if deep else self.__copy__()
+        if deep:
+            copied = self.__class__.model_construct(
+                **_safe_deepcopy(self.__dict__)
+            )
+        else:
+            copied = self.__class__.model_construct(
+                **self.__dict__
+            )
+            
         if update:
             if self.model_config.get('extra') == 'allow':
                 for k, v in update.items():
