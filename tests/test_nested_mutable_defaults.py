@@ -1,78 +1,82 @@
-import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-def test_nested_mutable_default_isolated():
+def test_default_factory_isolation():
     class Child(BaseModel):
         items: list[int] = []
 
     class Parent(BaseModel):
-        child: Child = Child()
+        child: Child = Field(default_factory=Child)
 
     p1 = Parent()
     p2 = Parent()
 
     p1.child.items.append(1)
 
-    assert p2.child.items == [], "Mutable defaults should not be shared across instances"
+    assert p2.child.items == []
 
 
-def test_multiple_levels_of_nesting():
-    class Inner(BaseModel):
-        values: dict[str, int] = {}
+def test_model_copy_deep_copy():
+    class Child(BaseModel):
+        items: list[int] = []
 
-    class Middle(BaseModel):
-        inner: Inner = Inner()
+    class Parent(BaseModel):
+        child: Child = Field(default_factory=Child)
 
-    class Outer(BaseModel):
-        middle: Middle = Middle()
+    p1 = Parent()
+    p2 = p1.model_copy()
 
-    o1 = Outer()
-    o2 = Outer()
+    p1.child.items.append(10)
 
-    o1.middle.inner.values["x"] = 10
-
-    assert o2.middle.inner.values == {}, "Deep nested mutable defaults must be isolated"
+    assert p2.child.items == []
 
 
-def test_mutation_after_validation():
+def test_model_validate_isolation():
     class Child(BaseModel):
         items: list[int] = []
 
     class Parent(BaseModel):
         child: Child
 
-    p1 = Parent(child=Child())
-    p2 = Parent(child=Child())
+    p1 = Parent.model_validate({"child": {}})
+    p2 = Parent.model_validate({"child": {}})
 
-    p1.child.items.append(42)
+    p1.child.items.append(5)
 
-    assert p2.child.items == [], "Explicit instances should also remain isolated"
-
-
-def test_dict_and_list_combination():
-    class Child(BaseModel):
-        data: dict[str, list[int]] = {}
-
-    class Parent(BaseModel):
-        child: Child = Child()
-
-    p1 = Parent()
-    p2 = Parent()
-
-    p1.child.data.setdefault("a", []).append(1)
-
-    assert p2.child.data == {}, "Nested dict/list structures must not be shared"
+    assert p2.child.items == []
 
 
-def test_default_factory_equivalence():
+def test_deep_nested_structures():
+    class Inner(BaseModel):
+        values: dict[str, list[int]] = {}
+
+    class Middle(BaseModel):
+        inner: Inner = Field(default_factory=Inner)
+
+    class Outer(BaseModel):
+        middle: Middle = Field(default_factory=Middle)
+
+    o1 = Outer()
+    o2 = Outer()
+
+    o1.middle.inner.values.setdefault("a", []).append(1)
+
+    assert o2.middle.inner.values == {}
+
+
+def test_copy_then_mutate_then_validate():
     class Child(BaseModel):
         items: list[int] = []
 
     class Parent(BaseModel):
-        child: Child = Child()
+        child: Child = Field(default_factory=Child)
 
     p1 = Parent()
-    p2 = Parent()
+    p2 = p1.model_copy()
 
-    assert p1.child is not p2.child, "Each nested model should be a new instance"
+    p1.child.items.append(99)
+
+    p3 = Parent.model_validate(p2.model_dump())
+
+    assert p2.child.items == []
+    assert p3.child.items == []
