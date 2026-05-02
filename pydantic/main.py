@@ -402,49 +402,40 @@ class BaseModel(metaclass=_model_construction.ModelMetaclass):
                         m.__pydantic_private__[k] = v
 
         return m
-
+        
     def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
-        """!!! abstract "Usage Documentation"
-            [`model_copy`](../concepts/models.md#model-copy)
-
-        Returns a copy of the model.
-
-        !!! note
-            The underlying instance's [`__dict__`][object.__dict__] attribute is copied. This
-            might have unexpected side effects if you store anything in it, on top of the model
-            fields (e.g. the value of [cached properties][functools.cached_property]).
-
-        Args:
-            update: Values to change/add in the new model. Note: the data is not validated
-                before creating the new model. You should trust this data.
-            deep: Set to `True` to make a deep copy of the model.
-
-        Returns:
-            New model instance.
-        """
-        if deep:
-            copied = self.__class__.model_construct(
-                **_safe_deepcopy(self.__dict__)
-            )
-        else:
-            copied = self.__class__.model_construct(
-                **self.__dict__
-            )
-            
-        if update:
-            if self.model_config.get('extra') == 'allow':
-                for k, v in update.items():
-                    if k in self.__pydantic_fields__:
-                        copied.__dict__[k] = v
-                    else:
-                        if copied.__pydantic_extra__ is None:
-                            copied.__pydantic_extra__ = {}
-                        copied.__pydantic_extra__[k] = v
+    if deep:
+        copied = self.__class__.model_construct(
+            **_safe_deepcopy(self.__dict__)
+        )
+    else:
+        data = {}
+        for k, v in self.__dict__.items():
+            if isinstance(v, BaseModel):
+                data[k] = v.model_copy(deep=True)
+            elif isinstance(v, (list, dict, set)):
+                from copy import deepcopy
+                data[k] = deepcopy(v)
             else:
-                copied.__dict__.update(update)
-            copied.__pydantic_fields_set__.update(update.keys())
-        return copied
+                data[k] = v
 
+        copied = self.__class__.model_construct(**data)
+
+    if update:
+        if self.model_config.get('extra') == 'allow':
+            for k, v in update.items():
+                if k in self.__pydantic_fields__:
+                    copied.__dict__[k] = v
+                else:
+                    if copied.__pydantic_extra__ is None:
+                        copied.__pydantic_extra__ = {}
+                    copied.__pydantic_extra__[k] = v
+        else:
+            copied.__dict__.update(update)
+        copied.__pydantic_fields_set__.update(update.keys())
+
+    return copied
+    
     def model_dump(
         self,
         *,
