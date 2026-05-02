@@ -15,7 +15,21 @@ def test_default_factory_isolation():
 
     assert p2.child.items == []
 
+def test_model_dump_roundtrip_isolation():
+    class Child(BaseModel):
+        items: list[int] = []
 
+    class Parent(BaseModel):
+        child: Child = Field(default_factory=Child)
+
+    p1 = Parent()
+    data = p1.model_dump()
+    p2 = Parent.model_validate(data)
+
+    p1.child.items.append(7)
+
+    assert p2.child.items == []
+    
 def test_model_copy_deep_copy():
     class Child(BaseModel):
         items: list[int] = []
